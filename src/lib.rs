@@ -16345,6 +16345,118 @@ impl RevoraRevenueShare {
 }
 
 #[cfg(test)]
+mod initialize_adversarial_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    #[test]
+    fn initialize_sets_admin_and_optional_state() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, RevoraRevenueShare);
+        let client = RevoraRevenueShareClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let safety = Address::generate(&env);
+
+        client.initialize(&admin, &Some(safety.clone()), &Some(true));
+
+        assert_eq!(client.get_admin(), Some(admin.clone()));
+        assert_eq!(client.is_event_only(), true);
+        assert_eq!(client.storage_layout_version(), Some(STORAGE_LAYOUT_VERSION));
+
+        let stored_safety: Option<Address> = env.as_contract(&contract_id, || {
+            env.storage().persistent().get(&DataKey::Safety)
+        });
+        assert_eq!(stored_safety, Some(safety));
+
+        let flags: (bool, bool) = env.as_contract(&contract_id, || {
+            env.storage().persistent().get(&DataKey2::ContractFlags).unwrap()
+        });
+        assert_eq!(flags, (false, true));
+
+        let paused: PauseState = env.as_contract(&contract_id, || {
+            env.storage().persistent().get(&DataKey::Paused).unwrap()
+        });
+        assert_eq!(paused, PauseState::NotPaused);
+
+        let deployed_version: (u32, u32, u32) = env.as_contract(&contract_id, || {
+            env.storage().persistent().get(&DataKey::DeployedVersion).unwrap()
+        });
+        assert_eq!(deployed_version, CONTRACT_VERSION);
+    }
+
+    #[test]
+    fn initialize_defaults_to_no_safety_and_event_only_disabled() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, RevoraRevenueShare);
+        let client = RevoraRevenueShareClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin, &None::<Address>, &None::<bool>);
+
+        assert_eq!(client.get_admin(), Some(admin.clone()));
+        assert_eq!(client.is_event_only(), false);
+
+        let safety: Option<Address> = env.as_contract(&contract_id, || {
+            env.storage().persistent().get(&DataKey::Safety)
+        });
+        assert_eq!(safety, None);
+
+        let flags: (bool, bool) = env.as_contract(&contract_id, || {
+            env.storage().persistent().get(&DataKey2::ContractFlags).unwrap()
+        });
+        assert_eq!(flags, (false, false));
+    }
+
+    #[test]
+    fn initialize_is_idempotent_and_preserves_persisted_state() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, RevoraRevenueShare);
+        let client = RevoraRevenueShareClient::new(&env, &contract_id);
+
+        let first_admin = Address::generate(&env);
+        let first_safety = Address::generate(&env);
+        client.initialize(&first_admin, &Some(first_safety.clone()), &Some(true));
+
+        let original_admin = client.get_admin().unwrap();
+        let original_layout = client.storage_layout_version().unwrap();
+        let original_flags: (bool, bool) = env.as_contract(&contract_id, || {
+            env.storage().persistent().get(&DataKey2::ContractFlags).unwrap()
+        });
+        let original_deployed: (u32, u32, u32) = env.as_contract(&contract_id, || {
+            env.storage().persistent().get(&DataKey::DeployedVersion).unwrap()
+        });
+        let original_safety: Option<Address> = env.as_contract(&contract_id, || {
+            env.storage().persistent().get(&DataKey::Safety)
+        });
+
+        let replacement_admin = Address::generate(&env);
+        let replacement_safety = Address::generate(&env);
+        client.initialize(&replacement_admin, &Some(replacement_safety), &Some(false));
+
+        assert_eq!(client.get_admin(), Some(original_admin.clone()));
+        assert_eq!(client.is_event_only(), true);
+        assert_eq!(client.storage_layout_version(), Some(original_layout));
+        assert_eq!(
+            env.as_contract(&contract_id, || env.storage().persistent().get(&DataKey2::ContractFlags).unwrap()),
+            original_flags
+        );
+        assert_eq!(
+            env.as_contract(&contract_id, || env.storage().persistent().get(&DataKey::DeployedVersion).unwrap()),
+            original_deployed
+        );
+        assert_eq!(
+            env.as_contract(&contract_id, || env.storage().persistent().get(&DataKey::Safety)),
+            original_safety
+        );
+        assert_eq!(client.get_admin(), Some(original_admin));
+    }
+}
+
+#[cfg(test)]
 mod test_close_period;
 #[cfg(test)]
 mod test_deferred_priority;
